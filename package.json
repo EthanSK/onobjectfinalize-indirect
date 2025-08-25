@@ -10,7 +10,8 @@
     "serve": "npm run teardown-emulators && npm run build && firebase emulators:start --only functions,firestore,storage,auth --inspect-functions",
     "create": "cd functions && npx ts-node scripts/createDoc.ts",
     "test-race": "./test-race-conditions.sh",
-    "repro": "echo 'Run: npm run serve (terminal 1) && ./test-race-conditions.sh (terminal 2)'"
+    "repro": "echo 'Run: npm run serve (terminal 1) && ./test-race-conditions.sh (terminal 2)'",
+    "postinstall": "cd functions && npm install"
   },
   "engines": {
     "node": ">=20"
