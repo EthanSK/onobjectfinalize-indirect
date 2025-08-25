@@ -85,14 +85,6 @@ for i in {1..100}; do
         STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-127.0.0.1:9199} \
         ITERATION=$i \
         node "$OUT_FILE"
-
-        # Wait a moment for all events to process
-        # sleep 0.5
-
-        # Add some randomness to timing
-        sleep_time=$(prng_float)
-        echo "⏱  sleep $sleep_time s (deterministic)"
-        sleep "$sleep_time"
 done
 
 echo ""
