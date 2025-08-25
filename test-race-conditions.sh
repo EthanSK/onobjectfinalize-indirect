@@ -74,9 +74,9 @@ prng_float() {
     awk -v val="$v" 'BEGIN { printf "%.2f", (val/2147483648) }'
 }
 
-for i in {1..20}; do
+for i in {1..100}; do
         echo ""
-        echo "🔄 Iteration $i/20"
+        echo "🔄 Iteration $i/100"
         echo "-------------------"
 
         # Run the trigger (set both legacy & current env vars for safety)
@@ -87,7 +87,7 @@ for i in {1..20}; do
         node "$OUT_FILE"
 
         # Wait a moment for all events to process
-        sleep 2
+        # sleep 0.5
 
         # Add some randomness to timing
         sleep_time=$(prng_float)
@@ -96,6 +96,6 @@ for i in {1..20}; do
 done
 
 echo ""
-echo "✅ Completed 20 iterations"
+echo "✅ Completed 100 iterations"
 echo "🔍 Check logs above for any 'CRITICAL BUG DETECTED' messages"
 echo "🔍 Also check for Storage events appearing in createBeforeSnapshot logs"
