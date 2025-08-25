@@ -1,10 +1,11 @@
 import admin from "firebase-admin";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
-import fs from "fs/promises";
-import os from "os";
-import path from "path";
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { spawn } from "child_process";
+import crypto from "crypto";
+import * as path from "path";
+import * as os from "os";
+import { promises as fs } from "fs";
 
 // Initialize Admin SDK only once.
 if (!admin.apps.length) {
@@ -27,159 +28,288 @@ interface WorkloadData {
   baseContent?: string;
 }
 
-// Minimal helper to mimic processing workload (kept for behavior, logs trimmed)
+// Run a small ffmpeg encode to burn CPU, then upload a text file to Storage to trigger onObjectFinalized.
+function runFfmpegAndUpload(params: {
+  uploadId: string;
+  label: string;
+  fileIndex: number;
+  group: string;
+}): Promise<void> {
+  const { uploadId, label, fileIndex, group } = params;
+  return new Promise((resolve) => {
+    const colors = [
+      "black",
+      "white",
+      "red",
+      "green",
+      "blue",
+      "purple",
+      "orange",
+      "yellow",
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const width = 160 + Math.floor(Math.random() * 160);
+    const height = 120 + Math.floor(Math.random() * 120);
+    crypto.randomBytes(3); // generate entropy (no id needed)
+    const ffArgs = [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${color}:s=${width}x${height}:d=0.3`,
+      "-f",
+      "null",
+      "-",
+    ];
+    const startedAt = Date.now();
+    let ffmpegRan = false;
+
+    const finalizeUpload = (ffmpegOk: boolean, exitCode?: number) => {
+      const rand = crypto.randomBytes(4).toString("hex");
+      const filePath = `uploads/${uploadId}-${fileIndex}-${rand}.txt`;
+      const bucket = admin.storage().bucket();
+      const uploadToken = `token-${uploadId}-${fileIndex}-${rand}`;
+      const durationMs = Date.now() - startedAt;
+      const content = [
+        "FFMPEG_SIMULATION RESULT",
+        `uploadId=${uploadId}`,
+        `label=${label}`,
+        `group=${group}`,
+        `color=${color}`,
+        `dimension=${width}x${height}`,
+        `ffmpegOk=${ffmpegOk}`,
+        `exitCode=${exitCode}`,
+        `durationMs=${durationMs}`,
+        `ts=${new Date().toISOString()}`,
+      ].join("\n");
+
+      // Create token doc similar to original /upload-file endpoint
+      const tokenRef = admin
+        .firestore()
+        .collection("storageUploadTokens")
+        .doc(uploadToken);
+      tokenRef
+        .set({
+          fileStoragePath: filePath,
+          dateExpires: admin.firestore.Timestamp.fromDate(
+            new Date(Date.now() + 3600000)
+          ),
+          isConsumed: false,
+          dateCreated: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        .catch((e) =>
+          logger.error("Failed to create token doc", {
+            uploadToken,
+            e: e.message,
+          })
+        );
+
+      bucket
+        .file(filePath)
+        .save(content, {
+          contentType: "text/plain",
+          metadata: {
+            metadata: {
+              uploadSource: "firestore-trigger-ffmpeg",
+              uploadId,
+              fileIndex: String(fileIndex),
+              uploadToken,
+              group,
+            },
+          },
+        })
+        .then(() => {
+          console.log(`🚀 UPLOADED FILE TO STORAGE: ${filePath}`);
+          console.log(
+            "🚀 This should trigger the Storage onUploadFileFinalize function!"
+          );
+          logger.info(`Uploaded ${filePath} after ffmpeg simulation`);
+          resolve();
+        })
+        .catch((e) => {
+          logger.error(`Failed to upload ${filePath}`, { e: e.message });
+          resolve();
+        });
+    };
+
+    // Try to run actual ffmpeg
+    const ffmpegProc = spawn("ffmpeg", ffArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!ffmpegRan) {
+        ffmpegProc.kill("SIGTERM");
+        finalizeUpload(false, -1);
+      }
+    }, 500);
+
+    ffmpegProc.on("exit", (code) => {
+      if (!ffmpegRan) {
+        ffmpegRan = true;
+        clearTimeout(timeout);
+        finalizeUpload(true, code ?? -1);
+      }
+    });
+
+    ffmpegProc.on("error", () => {
+      if (!ffmpegRan) {
+        ffmpegRan = true;
+        clearTimeout(timeout);
+        finalizeUpload(false, -2);
+      }
+    });
+  });
+}
+
+// CRITICAL: Use dynamic imports with await like main project to create timing windows
 async function makeApiRequestWithFFmpeg(opts: {
   url: string;
   data: WorkloadData;
 }) {
+  // CRITICAL: Dynamic import logger each time
+  const { logger } = await import("firebase-functions");
+  logger.info(
+    "🔥 Using DYNAMIC IMPORTS to create context mixing timing windows like main project"
+  );
+
   // Run ffmpeg workload (errors only)
   await runFFmpegProcessing(opts.data);
 
+  // Skip HTTP calls like successful repro - go straight to ffmpeg simulation burst
+
+  // CRITICAL: Use dynamic imports with await like the main project to create context mixing timing windows
   if (opts.url === "/generateAllPreviewVideosForClipsInUse") {
-    return await generateAllPreviewVideosForClipsInUse(opts.data);
+    // Dynamic import creates timing window where context can get mixed
+    console.log(
+      "🔥 DYNAMIC IMPORT: Loading generateAllPreviewVideosForClipsInUse"
+    );
+    const module = await import("./firestore-triggers");
+    return await module.generateAllPreviewVideosForClipsInUse(opts.data);
   } else if (opts.url === "/upload-file") {
-    return await uploadFile(opts.data);
+    // Another dynamic import timing window
+    console.log("🔥 DYNAMIC IMPORT: Loading uploadFile");
+    const module = await import("./firestore-triggers");
+    return await module.uploadFile(opts.data);
   } else if (opts.url === "/simulate-ffmpeg-processing") {
-    return await simulateFFmpeg();
+    // Yet another timing window
+    console.log("🔥 DYNAMIC IMPORT: Loading simulateFFmpeg");
+    const module = await import("./firestore-triggers");
+    return await module.simulateFFmpeg();
   }
 
   return { success: true };
 }
 
-// REAL FFMPEG processing to create CPU load and I/O blocking
+// LIGHTWEIGHT processing + MASSIVE parallel storage uploads to trigger race conditions
 async function runFFmpegProcessing(data: WorkloadData) {
+  // CRITICAL: Dynamic imports for fs, os, path to create timing windows
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+
   const uploadId = data.uploadId;
+  const numParallelUploads = 20; // Create 20 parallel storage uploads
 
   try {
-    // Create temp paths
-    const tempDir = os.tmpdir();
-    // input file path (unused after change, kept for clarity of workload intent)
-    // (input file path removed to avoid unused variable warnings)
-    const outputFile = path.join(
-      tempDir,
-      `output-${uploadId}-${Math.random().toString(36).slice(2)}.mp4`
-    );
+    // Create many parallel storage upload tasks instead of heavy processing
+    const uploadTasks = Array.from({ length: numParallelUploads }).map(
+      async (_, taskIndex) => {
+        const tempDir = os.tmpdir();
+        const rand = Math.random().toString(36).slice(2, 10);
+        const tempFilePath = path.join(
+          tempDir,
+          `burst-upload-${uploadId}-${taskIndex}-${rand}.txt`
+        );
 
-    // Generate a complex, CPU-intensive test video with ffmpeg
-    const ffmpegProcess = spawn(
-      "ffmpeg",
-      [
-        "-f",
-        "lavfi",
-        "-i",
-        "testsrc=duration=5:size=1280x720:rate=60", // 5 seconds, 1280x720, 60fps - much larger
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryslow", // Maximum CPU usage - very slow encoding
-        "-crf",
-        "18", // High quality = more CPU work
-        "-x264-params",
-        "me=umh:subme=10:ref=16:bframes=16:b-adapt=2:direct=auto:weightb=1:analyse=all:8x8dct=1:trellis=2:fast-pskip=0:mixed-refs=1", // Complex x264 options for max CPU load
-        "-threads",
-        "0", // Use all available CPU cores
-        "-y", // Overwrite output
-        outputFile,
-      ],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
+        // Create a simple text file with unique content
+        const content = `Burst upload #${taskIndex} for ${uploadId} at ${new Date().toISOString()} - random: ${rand}`;
+        await fs.writeFile(tempFilePath, content);
+
+        try {
+          const bucket = admin.storage().bucket();
+          const storageFilePath = `burst-uploads/${uploadId}/task-${taskIndex}-${rand}.txt`;
+
+          // Create upload token doc for each burst upload
+          const uploadToken = `burst-token-${uploadId}-${taskIndex}-${rand}`;
+          const tokenRef = admin
+            .firestore()
+            .collection("storageUploadTokens")
+            .doc(uploadToken);
+
+          await tokenRef.set({
+            fileStoragePath: storageFilePath,
+            dateExpires: admin.firestore.Timestamp.fromDate(
+              new Date(Date.now() + 3600000)
+            ),
+            isConsumed: false,
+            dateCreated: admin.firestore.FieldValue.serverTimestamp(),
+            taskIndex,
+            burstUpload: true,
+          });
+
+          await bucket.upload(tempFilePath, {
+            destination: storageFilePath,
+            metadata: {
+              contentType: "text/plain",
+              metadata: {
+                uploadSource: "burst-processing",
+                uploadId,
+                uploadToken,
+                isBurstUpload: "yes",
+                processingType: "parallel-burst-upload",
+                taskIndex: taskIndex.toString(),
+                timestamp: new Date().toISOString(),
+              },
+            },
+          });
+
+          logger.debug?.("completed burst upload", {
+            uploadId,
+            taskIndex,
+            storageFilePath,
+          });
+
+          // Clean up local temp file after upload
+          await fs.unlink(tempFilePath);
+
+          return { success: true, taskIndex, filePath: storageFilePath };
+        } catch (uploadError) {
+          logger.error("Failed burst upload:", { uploadError, taskIndex });
+          // Clean up temp file even if upload failed
+          try {
+            await fs.unlink(tempFilePath);
+          } catch {
+            /* ignore cleanup errors */
+          }
+          return { success: false, taskIndex, error: uploadError };
+        }
       }
     );
 
-    // Wait for ffmpeg to complete (creates blocking I/O)
-    await new Promise<void>((resolve) => {
-      ffmpegProcess.stderr?.on("data", () => {
-        /* discard noisy ffmpeg stderr */
-      });
+    // Execute all uploads in parallel and wait for completion
+    const results = await Promise.all(uploadTasks);
+    const successful = results.filter((r) => r.success).length;
 
-      ffmpegProcess.on("close", async (code) => {
-        if (code === 0) {
-          // Upload the generated video to storage instead of deleting it
-          try {
-            const bucket = admin.storage().bucket();
-            const rand = Math.random().toString(36).slice(2, 10);
-            const storageFilePath = `ffmpeg-outputs/${uploadId}-${rand}.mp4`;
-
-            // Create upload token doc for the ffmpeg output
-            const uploadToken = `ffmpeg-token-${uploadId}-${Math.random()
-              .toString(36)
-              .slice(2)}`;
-            const tokenRef = admin
-              .firestore()
-              .collection("storageUploadTokens")
-              .doc(uploadToken);
-            await tokenRef.set({
-              fileStoragePath: storageFilePath,
-              dateExpires: admin.firestore.Timestamp.fromDate(
-                new Date(Date.now() + 3600000)
-              ),
-              isConsumed: false,
-              dateCreated: admin.firestore.FieldValue.serverTimestamp(),
-            });
-
-            await bucket.upload(outputFile, {
-              destination: storageFilePath,
-              metadata: {
-                contentType: "video/mp4",
-                metadata: {
-                  uploadSource: "ffmpeg-processing",
-                  uploadId,
-                  uploadToken,
-                  isFFmpegOutput: "yes",
-                  processingType: "test-video-generation",
-                },
-              },
-            });
-
-            logger.debug?.("uploaded ffmpeg output", {
-              uploadId,
-              storageFilePath,
-            });
-
-            // Clean up local temp file after upload
-            await fs.unlink(outputFile);
-          } catch (uploadError) {
-            logger.error("Failed to upload ffmpeg output:", uploadError);
-            // Clean up temp file even if upload failed
-            try {
-              await fs.unlink(outputFile);
-            } catch {
-              /* ignore cleanup errors */
-            }
-          }
-          resolve();
-        } else {
-          logger.debug?.("ffmpeg non-zero exit (ignored)", { code });
-          // Still resolve to continue the test - ffmpeg might not be installed
-          resolve();
-        }
-      });
-
-      ffmpegProcess.on("error", (err: unknown) => {
-        logger.debug?.(
-          "ffmpeg spawn failed (likely not installed, continuing)",
-          { message: (err as Error)?.message }
-        );
-        // Still resolve to continue the test - ffmpeg might not be installed
-        resolve();
-      });
-
-      // Timeout after 60 seconds (increased for heavy encoding)
-      setTimeout(() => {
-        ffmpegProcess.kill("SIGKILL");
-        resolve();
-      }, 60000);
+    logger.debug?.("burst uploads completed", {
+      uploadId,
+      totalTasks: numParallelUploads,
+      successful,
+      failed: numParallelUploads - successful,
     });
   } catch (error) {
-    logger.debug?.("ffmpeg setup failed (continuing)", {
+    logger.debug?.("burst upload setup failed", {
       message: (error as Error)?.message,
     });
-    // Continue anyway - ffmpeg might not be available
   }
 }
 
 // Direct function implementations (extracted from express-app)
-async function generateAllPreviewVideosForClipsInUse(data: WorkloadData) {
+export async function generateAllPreviewVideosForClipsInUse(
+  data: WorkloadData
+) {
   const uploadId = data.uploadId;
 
   // Simulate getting clips in use (like parent project does) - INCREASE for bug reproduction
@@ -222,14 +352,14 @@ async function generateClipPreviewVideo(data: WorkloadData) {
   return { success: true, filesCreated: uploads.length };
 }
 
-async function simulateFFmpeg() {
+export async function simulateFFmpeg() {
   // Random delay to create timing variations
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 200 + 50));
 
   return { success: true, processed: true };
 }
 
-async function uploadFile(data: WorkloadData) {
+export async function uploadFile(data: WorkloadData) {
   const { uploadId, fileIndex, baseContent } = data;
 
   if (!uploadId || fileIndex === undefined || !baseContent) {
