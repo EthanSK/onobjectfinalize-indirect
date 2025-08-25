@@ -2,7 +2,7 @@
   "name": "firebase-cli-emulator-race-condition-repro",
   "private": true,
   "version": "1.0.0",
-  "description": "Reproduction case for Firebase CLI emulator bug where Storage events get misrouted to Firestore handlers",
+  "description": "Reproduction case for Firebase CLI emulator bug where Storage events get misrouted to Firestore handlers when using axiosist mock adapters",
   "scripts": {
     "build": "tsc -p .",
     "clean": "rimraf functions/lib",
@@ -24,7 +24,10 @@
     "race-condition",
     "firestore",
     "storage",
-    "functions"
+    "functions",
+    "axiosist",
+    "express",
+    "mock-adapter"
   ],
   "dependencies": {
     "firebase-admin": "^13.4.0",

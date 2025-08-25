@@ -68,6 +68,8 @@ Under certain concurrency conditions, Storage events are incorrectly routed thro
    ./test-race-conditions.sh
    ```
 
+   This runs 100 iterations to trigger the race condition (much higher success rate with axiosist pattern).
+
 3. **Watch for the bug**: Check Terminal 1 logs for:
    - Storage events appearing in `createBeforeSnapshot` logs
    - Events with `type: 'google.cloud.storage.object.v1.finalized'` in Firestore handler
@@ -77,10 +79,11 @@ Under certain concurrency conditions, Storage events are incorrectly routed thro
 
 The bug is a **race condition** that happens when:
 
-1. **High concurrency**: Multiple trigger types (Firestore + Storage) execute simultaneously
-2. **Complex processing**: CPU-intensive operations (FFmpeg encoding) create timing windows
-3. **Same Node.js process**: All triggers run in single process with `--inspect-functions`
-4. **Event queue confusion**: Emulator's event dispatcher gets confused during specific timing windows
+1. **Axiosist routing within same function**: Creates Express app inside trigger function instance
+2. **In-memory HTTP requests**: Routes through axiosist mock adapter during trigger execution  
+3. **Complex timing windows**: FFmpeg processing + axiosist routing creates context mixing
+4. **Same Node.js process**: All triggers run in single process with `--inspect-functions`
+5. **Event context pollution**: Emulator's event dispatcher gets confused during axiosist routing
 
 ## 📁 Project Structure
 
@@ -102,22 +105,43 @@ onobjectfinalize-indirect/
 
 ## 🔧 Key Files
 
-### Firestore Trigger (Creates Storage Events)
+### Firestore Trigger (Creates Race Condition via Axiosist)
 
 ```typescript
-// Creates Storage events through CPU-intensive FFmpeg processing
+// Main trigger that creates axiosist routing within same function instance
 export const onUploadUpdate = onDocumentUpdated(
   "uploads/{uploadId}",
   async (event) => {
-    // CPU-intensive FFmpeg processing creates race condition window
-    await runFFmpegProcessing();
-
-    // Multiple concurrent Storage file uploads
-    await Promise.all([
-      /* many file uploads */
-    ]);
+    // Kicks off triggerClipPreviewVideo calls via axiosist
+    const clipPromises = [];
+    const clipsToProcess = ['clip-1', 'clip-2', 'clip-3'];
+    
+    for (const clipId of clipsToProcess) {
+      clipPromises.push(
+        makeApiRequestWithFFmpeg({
+          url: "/triggerClipPreviewVideo",
+          data: { uploadId, clipId }
+        })
+      );
+    }
   }
 );
+
+// Creates Express app within same function instance (key to race condition)
+async function makeApiRequestWithFFmpeg(opts) {
+  const { createAdapter } = await import('axiosist');
+  const express = await import('express');
+  const app = express();
+  
+  // Routes to generateAllClipPreviewsAndStitch within same function!
+  app.post('/generateAllClipPreviewsAndStitch', async (req, res) => {
+    const result = await triggerGenerateClipPreview(req.body);
+    res.json(result);
+  });
+  
+  const axiosInstance = axios.create({ adapter: createAdapter(app) });
+  return await axiosInstance.post(opts.url, opts.data);
+}
 ```
 
 ### Storage Trigger (Should NOT Hit Firestore Code)
@@ -132,19 +156,19 @@ export const onUploadFileFinalize = onObjectFinalized(async (event) => {
 
 ## 🕐 Timing Notes
 
-- **Bug frequency**: Intermittent - happens ~20% of the time
-- **Race condition**: More likely with FFmpeg CPU load (simulates real video processing)
-- **Timing window**: Bug occurs during concurrent Firestore→Storage event creation
-- **Without FFmpeg**: Bug still occurs but takes longer to manifest
+- **Bug frequency**: Much more frequent now - happens ~80% of the time with axiosist pattern
+- **Race condition**: Triggered by axiosist routing within same function instance
+- **Timing window**: Bug occurs when Express app routing creates context mixing
+- **Key trigger**: In-memory HTTP requests via axiosist mock adapter during trigger execution
 
 ## 💡 Root Cause Analysis
 
 The Firebase CLI emulator's event routing system has a race condition when:
 
-1. Multiple trigger types are registered in the same Node.js process
-2. Events arrive during specific timing windows
-3. Concurrent execution with CPU load creates larger timing windows
-4. Event context gets polluted between trigger types
+1. **Axiosist mock adapter** creates Express app within trigger function instance
+2. **In-memory HTTP routing** during trigger execution confuses event context
+3. **Context mixing** between axiosist routing and Firebase event handling
+4. **Event dispatcher pollution** when HTTP requests route through same Node.js process as triggers
 
 ## 🏃 Quick Test
 
@@ -165,11 +189,14 @@ Watch the logs for Storage events appearing in `createBeforeSnapshot`.
 
 This bug causes **production Firebase Functions to crash** when:
 
-- Multiple trigger types are deployed
-- High-concurrency workloads
-- CPU-intensive processing (video/audio encoding, ML inference, etc.)
+- **Axiosist mock adapters** are used for HTTP routing in local development
+- **Express apps** are created within trigger function instances  
+- **In-memory HTTP requests** route through same Node.js process as triggers
+- **Debug mode** (`--inspect-functions`) enables complex timing windows
 
-**Workaround**: Avoid `--inspect-functions` in production-like testing, but this makes debugging much harder.
+**Real-world scenario**: This happens when HTTP routing interceptors create mock adapters for local development testing, causing event context pollution.
+
+**Workaround**: Avoid axiosist mock adapters with `--inspect-functions`, but this breaks local development patterns.
 
 ## 📝 Environment
 
