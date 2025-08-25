@@ -1,0 +1,59 @@
+{
+  "editor.formatOnSave": true,
+  "restoreTerminals.runOnStartup": false,
+  "restoreTerminals.terminals": [
+    {
+      "splitTerminals": [
+        {
+          "name": "export emulator data",
+          "commands": ["npm run export-emulator-data-periodically"]
+        },
+        {
+          "name": "terminal"
+        }
+      ]
+    },
+    {
+      "splitTerminals": [
+        {
+          "name": "frontend",
+          "commands": ["npm run serve:frontend"]
+        },
+        { "name": "terminal" }
+      ]
+    },
+    {
+      "splitTerminals": [
+        {
+          "name": "api emulator",
+          "commands": ["nvm use 20", "npm run serve:emulators"]
+        },
+
+        {
+          "name": "watch functions",
+          "commands": ["nvm use 20", "npm run serve:functions:watch"]
+        }
+      ]
+    }
+  ],
+  "vsicons.presets.angular": true,
+  "editor.codeActionsOnSave": {
+    // "source.organizeImports": "always" //causes hang often
+  },
+  "typescript.tsdk": "node_modules/typescript/lib", //needed or can hang
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bower_components": true,
+    "**/*.code-search": true,
+    "**/dist": true,
+    "**/lyricstify-api/**": true
+  },
+  "files.exclude": {
+    // "**/lyricstify-api/**": true
+  },
+  "files.associations": {
+    "firestore.indexes.json": "jsonc"
+  },
+  "angular.enable-strict-mode-prompt": false,
+  "nxConsole.generateAiAgentRules": true
+}

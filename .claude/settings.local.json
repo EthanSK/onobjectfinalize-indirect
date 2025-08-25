@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Bash(npm run serve:*)",
+      "Bash(npm run create:*)",
+      "Bash(node:*)",
+      "Bash(FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 STORAGE_EMULATOR_HOST=127.0.0.1:9199 node functions/lib/scripts/createDoc.js)",
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Bash(npm run build:*)",
+      "Bash(npm install)",
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Bash(tsc:*)",
+      "Bash(npx tsc:*)",
+      "Read(//Users/ethansarif-kattan/Projects/ai-music-video-studio/**)",
+      "Bash(npm run:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

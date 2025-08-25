@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Deploy to Staging",
+      "type": "shell",
+      "command": "gh pr create --fill --base deploy-staging && gh pr merge --merge",
+      "problemMatcher": []
+    },
+    {
+      "label": "Deploy to Production",
+      "type": "shell",
+      "command": "gh pr create --fill --base deploy-prod && gh pr merge --merge",
+      "problemMatcher": []
+    }
+  ]
+}

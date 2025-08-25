@@ -1,0 +1,39 @@
+{
+  "name": "firebase-cli-emulator-race-condition-repro",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Reproduction case for Firebase CLI emulator bug where Storage events get misrouted to Firestore handlers",
+  "scripts": {
+    "build": "tsc -p .",
+    "clean": "rimraf functions/lib",
+    "teardown-emulators": "pkill -f firebase && lsof -ti :8080 -ti :9229 -ti :4000 -ti :5001 | xargs kill || true",
+    "serve": "npm run teardown-emulators && npm run build && firebase emulators:start --only functions,firestore,storage,auth --inspect-functions",
+    "create": "cd functions && npx ts-node scripts/createDoc.ts",
+    "test-race": "./test-race-conditions.sh",
+    "repro": "echo 'Run: npm run serve (terminal 1) && ./test-race-conditions.sh (terminal 2)'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "firebase",
+    "firebase-tools", 
+    "emulator",
+    "bug-reproduction",
+    "race-condition",
+    "firestore",
+    "storage",
+    "functions"
+  ],
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "6.4.0",
+    "firebase-tools": "^14.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "rimraf": "^5.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
