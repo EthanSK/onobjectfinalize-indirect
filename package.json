@@ -1,5 +1,4 @@
 {
-  "license": "SEE LICENSE IN LICENSE",
   "name": "firebase-cli-emulator-race-condition-repro",
   "private": true,
   "version": "1.0.0",

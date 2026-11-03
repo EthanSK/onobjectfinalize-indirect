@@ -1,5 +1,4 @@
 {
-  "license": "SEE LICENSE IN ../LICENSE",
   "name": "onobjectfinalize-indirect-functions",
   "private": true,
   "main": "lib/src/index.js",
